@@ -1,6 +1,7 @@
 // pnl.js
 const { zipLongest } = require('./utils'); // We will create this helper
 
+
 function generatePnlReport(userData, userId) {
     console.log(`--- Generating P&L Report for ${userId} ---`);
     let netIncome;

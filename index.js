@@ -110,7 +110,21 @@ app.post("/reports", async (req, res) => {
         console.log(`✓ Datos P&L de Negocio calculados. Ingreso neto: $${businessNetIncome.toFixed(2)}`);
 
         // Generar Balance Sheet
-        const balanceSheetDf = generateBalanceSheet(data, cleanUserId, netIncome);
+        console.log("\n--- Generando Balance Sheet ---");
+        const balanceSheetResult = generateBalanceSheet(data, cleanUserId, netIncome);
+        const balanceSheetDf = balanceSheetResult.data;
+        const balanceSummary = balanceSheetResult.balanceSummary;
+
+        // Log del estado del balance
+        if (balanceSummary.isBalanced) {
+            console.log(`✓ Balance Sheet balanceado: $${balanceSummary.totalAssets.toFixed(2)}`);
+        } else {
+            console.warn(`⚠ Balance Sheet desbalanceado!`);
+            console.warn(`   Assets: $${balanceSummary.totalAssets.toFixed(2)}`);
+            console.warn(`   Liabilities + Equity: $${balanceSummary.totalLiabilitiesAndEquity.toFixed(2)}`);
+            console.warn(`   Diferencia: $${balanceSummary.difference.toFixed(2)}`);
+            console.warn(`   ${balanceSummary.adjustmentDescription}`);
+        }
 
         // Crear y escribir en nuevo documento de ExcelJS
         console.log("\n--- Creando archivo Excel ---");
