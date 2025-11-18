@@ -1,8 +1,7 @@
 // pnl.js
 const { zipLongest } = require('./utils'); // We will create this helper
 
-
-function generatePnlReport(userData, userId) {
+function generatePnlReport(userData, userId, expenseSubcategoryBreakdown = null) {
     console.log(`--- Generating P&L Report for ${userId} ---`);
     let netIncome;
     try {
@@ -19,39 +18,11 @@ function generatePnlReport(userData, userId) {
         ["Uncategorized", userData["Uncategorized Income"]],
     ];
 
-    const opExpenseItems = [
-        ["Advertising", userData["Advertising"]],
-        ["Advertising - test purchases", userData["Advertising - test purchases"]],
-        ["Business Equipment", userData["Business Equipment"]],
-        ["Education", userData["Education"]],
-        ["Employee & Contractor Salaries", userData["Employee & Contractor Salaries"]],
-        ["Entertainment", userData["Entertainment"]],
-        ["Food & Drink", userData["Food & Drink"]],
-        ["Food & Drink - w/ Client", userData["Food & Drink - w/ Client"]],
-        ["Medical", userData["Medical"]],
-        ["Non-Profit / Charity", userData["Non-Profit / Charity"]],
-        ["Personal Branding", userData["Personal Branding"]],
-        ["Professional Fees", userData["Professional Fees"]],
-        ["Professional Fees - Market fees", userData["Professional Fees - Market fees"]],
-        ["Professional Fees - Patent", userData["Professional Fees - Patent"]],
-        ["Professional Fees - Sunbiz registration fees", userData["Professional Fees - Sunbiz registration fees"]],
-        ["Rent & Utilities", userData["Rent & Utilities"]],
-        ["Repairs & Maintenance", userData["Repairs & Maintenance"]],
-        ["Subscriptions", userData["Subscriptions"]],
-        ["Supplies", userData["Supplies"]],
-        ["Transportation", userData["Transportation"]],
-        ["Travel", userData["Travel"]],
-        ["Uncategorized", userData["Uncategorized Expense"]],
-    ];
+    // Build expense items with subcategory breakdown
+    const expenseItemsWithSubcategories = buildExpenseItemsWithSubcategories(userData, expenseSubcategoryBreakdown);
 
-    const otherExpenseItems = [
-        ["Bank Fees", userData["Bank Fees"]],
-        ["Insurance", userData["Insurance"]],
-        ["Tax", userData["Tax"]],
-    ];
+    const allExpenseItems = expenseItemsWithSubcategories.opExpenseItems.concat(expenseItemsWithSubcategories.otherExpenseItems);
 
-    const allExpenseItems = opExpenseItems.concat(otherExpenseItems);
-    
     const expenseSumFormula = "SUM(B5:B" + (5 + allExpenseItems.length) + ")";
     const incomeSumFormula = "SUM(D5:D" + (5 + incomeItems.length) + ")";
 
@@ -68,16 +39,62 @@ function generatePnlReport(userData, userId) {
         data.push([exp[0], exp[1], inc[0], inc[1]]);
     }
     
-    // This is the "DataFrame" equivalent
     return { pnlDf: data, netIncome };
 }
 
-function generatePnlReportByAccount(userData, userId, accountType) {
-    // ... (This function would be structured identically to generatePnlReport,
-    // just changing the title row) ...
-    // For brevity, I am reusing the logic, but you would copy/paste and adapt
-    const { pnlDf, netIncome } = generatePnlReport(userData, userId);
-    
+function buildExpenseItemsWithSubcategories(userData, expenseSubcategoryBreakdown) {
+    const baseOpExpenseCategories = [
+        "Advertising", "Advertising - test purchases", "Business Equipment", "Education",
+        "Employee & Contractor Salaries", "Entertainment", "Food & Drink", "Food & Drink - w/ Client",
+        "Medical", "Non-Profit / Charity", "Personal Branding", "Professional Fees",
+        "Professional Fees - Market fees", "Professional Fees - Patent",
+        "Professional Fees - Sunbiz registration fees", "Rent & Utilities", "Repairs & Maintenance",
+        "Subscriptions", "Supplies", "Transportation", "Travel", "Uncategorized Expense"
+    ];
+
+    const baseOtherExpenseCategories = ["Bank Fees", "Insurance", "Tax"];
+
+    const opExpenseItems = [];
+    const otherExpenseItems = [];
+
+    // Process operating expenses
+    for (const category of baseOpExpenseCategories) {
+        const amount = userData[category] || 0;
+        opExpenseItems.push([category, amount]);
+
+        // Add subcategories if they exist
+        if (expenseSubcategoryBreakdown && expenseSubcategoryBreakdown[category]) {
+            const subcategories = expenseSubcategoryBreakdown[category];
+            const sortedSubcategories = Object.entries(subcategories).sort(([a], [b]) => a.localeCompare(b));
+
+            for (const [subcategory, subAmount] of sortedSubcategories) {
+                opExpenseItems.push([`  ${subcategory}`, subAmount]);
+            }
+        }
+    }
+
+    // Process other expenses
+    for (const category of baseOtherExpenseCategories) {
+        const amount = userData[category] || 0;
+        otherExpenseItems.push([category, amount]);
+
+        // Add subcategories if they exist
+        if (expenseSubcategoryBreakdown && expenseSubcategoryBreakdown[category]) {
+            const subcategories = expenseSubcategoryBreakdown[category];
+            const sortedSubcategories = Object.entries(subcategories).sort(([a], [b]) => a.localeCompare(b));
+
+            for (const [subcategory, subAmount] of sortedSubcategories) {
+                otherExpenseItems.push([`  ${subcategory}`, subAmount]);
+            }
+        }
+    }
+
+    return { opExpenseItems, otherExpenseItems };
+}
+
+function generatePnlReportByAccount(userData, userId, accountType, expenseSubcategoryBreakdown = null) {
+    const { pnlDf, netIncome } = generatePnlReport(userData, userId, expenseSubcategoryBreakdown);
+
     if (pnlDf) {
         // Just modify the title
         pnlDf[0][0] = `${accountType} Yearly Income And Expense Report`;

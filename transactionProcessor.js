@@ -60,6 +60,95 @@ function processGroupedDataForPnl(groupedData) {
 }
 
 /**
+ * Process grouped transaction data with subcategory breakdown for enhanced P&L report.
+ */
+function processGroupedDataWithSubcategoriesForPnl(groupedData) {
+    const pnlData = {
+        "Business Income": 0.0, "Other Income": 0.0, "Uncategorized Income": 0.0,
+        "Advertising": 0.0, "Advertising - test purchases": 0.0, "Business Equipment": 0.0,
+        "Education": 0.0, "Employee & Contractor Salaries": 0.0, "Entertainment": 0.0,
+        "Food & Drink": 0.0, "Food & Drink - w/ Client": 0.0, "Medical": 0.0,
+        "Non-Profit / Charity": 0.0, "Personal Branding": 0.0, "Professional Fees": 0.0,
+        "Professional Fees - Market fees": 0.0, "Professional Fees - Patent": 0.0,
+        "Professional Fees - Sunbiz registration fees": 0.0, "Rent & Utilities": 0.0,
+        "Repairs & Maintenance": 0.0, "Subscriptions": 0.0, "Supplies": 0.0,
+        "Transportation": 0.0, "Travel": 0.0, "Uncategorized Expense": 0.0,
+        "Bank Fees": 0.0, "Insurance": 0.0, "Tax": 0.0,
+    };
+
+    // Store subcategory breakdown for expenses
+    const expenseSubcategoryBreakdown = {};
+
+    // Process income (same as before)
+    const incomeCategories = groupedData.income || {};
+    for (const [category, amount] of Object.entries(incomeCategories)) {
+        if (category in pnlData) pnlData[category] += amount;
+        else if (category.includes("Business") || category.includes("Income")) pnlData["Business Income"] += amount;
+        else if (category.includes("Uncategorized")) pnlData["Uncategorized Income"] += amount;
+        else pnlData["Other Income"] += amount;
+    }
+
+    // Process expenses with subcategory tracking
+    const expensesByCategory = groupedData.expensesByCategory || {};
+    for (const [category, categoryData] of Object.entries(expensesByCategory)) {
+        const amount = categoryData.total;
+        const subcategories = categoryData.subcategories;
+
+        // Map to P&L categories
+        let pnlCategory;
+        if (category in pnlData) {
+            pnlCategory = category;
+        } else {
+            pnlCategory = "Uncategorized Expense";
+        }
+
+        pnlData[pnlCategory] += amount;
+
+        // Store subcategory breakdown for this P&L category
+        if (Object.keys(subcategories).length > 0) {
+            if (!expenseSubcategoryBreakdown[pnlCategory]) {
+                expenseSubcategoryBreakdown[pnlCategory] = {};
+            }
+
+            // Add subcategories to the breakdown
+            for (const [subcategory, subAmount] of Object.entries(subcategories)) {
+                if (!expenseSubcategoryBreakdown[pnlCategory][subcategory]) {
+                    expenseSubcategoryBreakdown[pnlCategory][subcategory] = 0;
+                }
+                expenseSubcategoryBreakdown[pnlCategory][subcategory] += subAmount;
+            }
+        }
+    }
+
+    // Calculate totals
+    const totalIncome = pnlData["Business Income"] + pnlData["Other Income"] + pnlData["Uncategorized Income"];
+
+    const totalOperatingExpenses = (
+        pnlData["Advertising"] + pnlData["Advertising - test purchases"] + pnlData["Business Equipment"] +
+        pnlData["Education"] + pnlData["Employee & Contractor Salaries"] + pnlData["Entertainment"] +
+        pnlData["Food & Drink"] + pnlData["Food & Drink - w/ Client"] + pnlData["Medical"] +
+        pnlData["Non-Profit / Charity"] + pnlData["Personal Branding"] + pnlData["Professional Fees"] +
+        pnlData["Professional Fees - Market fees"] + pnlData["Professional Fees - Patent"] +
+        pnlData["Professional Fees - Sunbiz registration fees"] + pnlData["Rent & Utilities"] +
+        pnlData["Repairs & Maintenance"] + pnlData["Subscriptions"] + pnlData["Supplies"] +
+        pnlData["Transportation"] + pnlData["Travel"] + pnlData["Uncategorized Expense"]
+    );
+
+    const totalOtherExpenses = pnlData["Bank Fees"] + pnlData["Insurance"] + pnlData["Tax"];
+    const grossProfit = totalIncome - totalOperatingExpenses;
+    const netIncome = grossProfit - totalOtherExpenses;
+
+    // Add totals to data
+    pnlData["Total Income"] = totalIncome;
+    pnlData["Total Operating Expenses"] = totalOperatingExpenses;
+    pnlData["Gross Profit"] = grossProfit;
+    pnlData["Total Other Expenses"] = totalOtherExpenses;
+    pnlData["Net Income"] = netIncome;
+
+    return { pnlData, expenseSubcategoryBreakdown };
+}
+
+/**
  * Convert list of transaction dictionaries to an array of objects for display.
  */
 function createTransactionsDataFrame(transactions) {
@@ -83,5 +172,6 @@ function createTransactionsDataFrame(transactions) {
 
 module.exports = {
     processGroupedDataForPnl,
+    processGroupedDataWithSubcategoriesForPnl,
     createTransactionsDataFrame
 };

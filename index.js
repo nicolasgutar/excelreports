@@ -3,11 +3,12 @@ const express = require('express');
 const cors = require('cors');
 const Config = require('./config');
 const db = require('./dbConnector');
-const { getUserTransactions, getTransactionsGroupedByCategory } = require('./dbQueries');
+const { getUserTransactions, getTransactionsGroupedByCategory, getTransactionsGroupedWithSubcategories } = require('./dbQueries');
 const { getAllBalanceSheetData } = require('./balanceSheetQueries');
 const {
     createTransactionsDataFrame,
-    processGroupedDataForPnl
+    processGroupedDataForPnl,
+    processGroupedDataWithSubcategoriesForPnl
 } = require('./transactionProcessor');
 const { generatePnlReport, generatePnlReportByAccount } = require('./pnl');
 const { generateBalanceSheet } = require('./balanceSheet');
@@ -60,17 +61,17 @@ app.post("/reports", async (req, res) => {
         // Crear DataFrame (Array de objetos) de transacciones para la hoja
         const transactionsDf = createTransactionsDataFrame(transactions);
 
-        // Procesar transacciones usando consulta agrupada para P&L
-        console.log("\nProcesando transacciones para P&L usando consulta agrupada...");
-        const groupedData = await getTransactionsGroupedByCategory(
+        // Procesar transacciones usando consulta agrupada para P&L con subcategorías
+        console.log("\nProcesando transacciones para P&L usando consulta agrupada con subcategorías...");
+        const groupedDataWithSubcategories = await getTransactionsGroupedWithSubcategories(
             cleanUserId,
             startDate,
             endDate
         );
 
-        // Procesar los datos agrupados en formato P&L
-        const data = processGroupedDataForPnl(groupedData);
-        console.log(`✓ Datos P&L calculados. Ingreso neto: $${data['Net Income'].toFixed(2)}`);
+        // Procesar los datos agrupados en formato P&L con desglose de subcategorías
+        const { pnlData: data, expenseSubcategoryBreakdown } = processGroupedDataWithSubcategoriesForPnl(groupedDataWithSubcategories);
+        console.log(`✓ Datos P&L calculados con subcategorías. Ingreso neto: $${data['Net Income'].toFixed(2)}`);
 
         // Obtener datos del Balance Sheet desde la base de datos
         console.log("\nObteniendo datos del Balance Sheet desde la base de datos...");
@@ -84,29 +85,29 @@ app.post("/reports", async (req, res) => {
         Object.assign(data, balanceSheetData);
         console.log("✓ Datos del Balance Sheet cargados desde la base de datos");
 
-        // Generar reporte P&L (General)
+        // Generar reporte P&L (General) con desglose de subcategorías
         console.log("\n--- Generando Reportes ---");
-        const { pnlDf, netIncome } = generatePnlReport(data, cleanUserId);
+        const { pnlDf, netIncome } = generatePnlReport(data, cleanUserId, expenseSubcategoryBreakdown);
         if (!pnlDf) {
             throw new Error("Error generando reporte P&L general");
         }
 
-        // Generar reporte P&L Personal
+        // Generar reporte P&L Personal con subcategorías
         console.log("\n--- Generando Reporte P&L Personal ---");
-        const personalGroupedData = await getTransactionsGroupedByCategory(
+        const personalGroupedData = await getTransactionsGroupedWithSubcategories(
             cleanUserId, startDate, endDate, "personal"
         );
-        const personalData = processGroupedDataForPnl(personalGroupedData);
-        const { pnlDf: personalPnlDf, netIncome: personalNetIncome } = generatePnlReportByAccount(personalData, cleanUserId, "Personal");
+        const { pnlData: personalData, expenseSubcategoryBreakdown: personalExpenseBreakdown } = processGroupedDataWithSubcategoriesForPnl(personalGroupedData);
+        const { pnlDf: personalPnlDf, netIncome: personalNetIncome } = generatePnlReportByAccount(personalData, cleanUserId, "Personal", personalExpenseBreakdown);
         console.log(`✓ Datos P&L Personal calculados. Ingreso neto: $${personalNetIncome.toFixed(2)}`);
 
-        // Generar reporte P&L de Negocio
+        // Generar reporte P&L de Negocio con subcategorías
         console.log("\n--- Generando Reporte P&L de Negocio ---");
-        const businessGroupedData = await getTransactionsGroupedByCategory(
+        const businessGroupedData = await getTransactionsGroupedWithSubcategories(
             cleanUserId, startDate, endDate, "business"
         );
-        const businessData = processGroupedDataForPnl(businessGroupedData);
-        const { pnlDf: businessPnlDf, netIncome: businessNetIncome } = generatePnlReportByAccount(businessData, cleanUserId, "Business");
+        const { pnlData: businessData, expenseSubcategoryBreakdown: businessExpenseBreakdown } = processGroupedDataWithSubcategoriesForPnl(businessGroupedData);
+        const { pnlDf: businessPnlDf, netIncome: businessNetIncome } = generatePnlReportByAccount(businessData, cleanUserId, "Business", businessExpenseBreakdown);
         console.log(`✓ Datos P&L de Negocio calculados. Ingreso neto: $${businessNetIncome.toFixed(2)}`);
 
         // Generar Balance Sheet
@@ -149,18 +150,16 @@ app.post("/reports", async (req, res) => {
         console.error("Error en /reports:", e);
         res.status(500).json({ detail: `Error generating reports: ${e.message}` });
     }
-    // No 'finally' para cerrar la conexión. El pool lo maneja.
 });
 
-app.get("/", (req, res) => {
-    res.json({ message: "Financial Reports API está funcionando" });
-});
-
+// Health check endpoint
 app.get("/health", (req, res) => {
-    res.json({ status: "healthy", service: "Financial Reports API" });
+    res.json({ status: "OK", message: "Financial Reports API is running" });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Servidor corriendo en http://0.0.0.0:${PORT}`);
-    Config.printConfig();
+// --- Start Server ---
+app.listen(PORT, () => {
+    console.log(`🚀 Financial Reports API running on port ${PORT}`);
 });
+
+module.exports = app;

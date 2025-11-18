@@ -105,7 +105,97 @@ async function getTransactionsGroupedByCategory(userId, startDate = null, endDat
     };
 }
 
+/**
+ * Get transactions with detailed category and subcategory breakdown for P&L report.
+ */
+async function getTransactionsGroupedWithSubcategories(userId, startDate = null, endDate = null, accountCategory = null) {
+    let incomeQuery = `
+    SELECT 
+        COALESCE(subcategory, category) as category_name,
+        SUM(amount) as total
+    FROM "Transaction"
+    WHERE "userId" = $1
+      AND category IS NOT NULL
+      AND amount > 0
+    `;
+
+    let expenseQuery = `
+    SELECT 
+        category,
+        subcategory,
+        SUM(ABS(amount)) as total
+    FROM "Transaction"
+    WHERE "userId" = $1
+      AND category IS NOT NULL
+      AND amount < 0
+    `;
+
+    const params = [userId];
+    let paramIndex = 2;
+
+    if (accountCategory) {
+        const accountFilter = ` AND "accountCategory" = $${paramIndex++}`;
+        incomeQuery += accountFilter;
+        expenseQuery += accountFilter;
+        params.push(accountCategory);
+    }
+
+    if (startDate && endDate) {
+        const dateFilter = ` AND date >= $${paramIndex++} AND date <= $${paramIndex++}`;
+        incomeQuery += dateFilter;
+        expenseQuery += dateFilter;
+        params.push(startDate, endDate);
+    }
+
+    incomeQuery += " GROUP BY COALESCE(subcategory, category)";
+    expenseQuery += " GROUP BY category, subcategory";
+
+    // Execute queries in parallel
+    const [incomeResults, expenseResults] = await Promise.all([
+        db.executeQuery(incomeQuery, params),
+        db.executeQuery(expenseQuery, params)
+    ]);
+
+    const incomeSummary = {};
+    for (const row of incomeResults) {
+        incomeSummary[row.category_name] = parseFloat(row.total) || 0.0;
+    }
+
+    // Process expenses with subcategory breakdown
+    const expensesByCategory = {};
+    for (const row of expenseResults) {
+        const category = row.category;
+        const subcategory = row.subcategory;
+        const amount = parseFloat(row.total) || 0.0;
+
+        if (!expensesByCategory[category]) {
+            expensesByCategory[category] = {
+                total: 0,
+                subcategories: {}
+            };
+        }
+
+        expensesByCategory[category].total += amount;
+
+        if (subcategory) {
+            expensesByCategory[category].subcategories[subcategory] = amount;
+        } else {
+            // Transactions without subcategory go to "Other"
+            if (!expensesByCategory[category].subcategories["Other"]) {
+                expensesByCategory[category].subcategories["Other"] = 0;
+            }
+            expensesByCategory[category].subcategories["Other"] += amount;
+        }
+    }
+
+    return {
+        income: incomeSummary,
+        expensesByCategory: expensesByCategory
+    };
+}
+
 module.exports = {
     getUserTransactions,
-    getTransactionsGroupedByCategory
+    getTransactionsGroupedByCategory,
+    getTransactionsGroupedWithSubcategories
 };

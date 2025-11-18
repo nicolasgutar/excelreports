@@ -130,18 +130,46 @@ function applyPnlFormatting(worksheet) {
         ]
     });
     
-    // 9. Item background color (Iterate rows 5+)
+    // 9. Format rows with different styles for categories vs subcategories
     for (let i = 5; i <= worksheet.rowCount; i++) {
         const row = worksheet.getRow(i);
-        // Col A
-        if (row.getCell('A').value) {
-            row.getCell('A').fill = { type: 'pattern', pattern: 'solid', fgColor: L_ITEM_BG };
-            row.getCell('A').font = BOLD_FONT;
+
+        // Col A - Check if this is a subcategory (starts with 2 spaces)
+        const cellValueA = row.getCell('A').value;
+        if (cellValueA && typeof cellValueA === 'string') {
+            const isSubcategory = cellValueA.startsWith('  ');
+
+            if (isSubcategory) {
+                // Subcategory formatting - lighter background, italic font
+                row.getCell('A').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } }; // Light gray
+                row.getCell('A').font = { italic: true, size: 10 };
+                row.getCell('A').alignment = { indent: 1 }; // Additional indent in Excel
+                row.getCell('B').font = { italic: true, size: 10 };
+            } else {
+                // Main category formatting - bold
+                row.getCell('A').fill = { type: 'pattern', pattern: 'solid', fgColor: L_ITEM_BG };
+                row.getCell('A').font = BOLD_FONT;
+                row.getCell('B').font = BOLD_FONT;
+            }
         }
-        // Col C
-        if (row.getCell('C').value) {
-            row.getCell('C').fill = { type: 'pattern', pattern: 'solid', fgColor: L_ITEM_BG };
-            row.getCell('C').font = BOLD_FONT;
+
+        // Col C - Check if this is a subcategory (starts with 2 spaces)
+        const cellValueC = row.getCell('C').value;
+        if (cellValueC && typeof cellValueC === 'string') {
+            const isSubcategory = cellValueC.startsWith('  ');
+
+            if (isSubcategory) {
+                // Subcategory formatting - lighter background, italic font
+                row.getCell('C').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } }; // Light gray
+                row.getCell('C').font = { italic: true, size: 10 };
+                row.getCell('C').alignment = { indent: 1 }; // Additional indent in Excel
+                row.getCell('D').font = { italic: true, size: 10 };
+            } else {
+                // Main category formatting - bold
+                row.getCell('C').fill = { type: 'pattern', pattern: 'solid', fgColor: L_ITEM_BG };
+                row.getCell('C').font = BOLD_FONT;
+                row.getCell('D').font = BOLD_FONT;
+            }
         }
     }
 }
