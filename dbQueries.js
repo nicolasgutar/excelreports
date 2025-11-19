@@ -2,48 +2,10 @@
 const db = require('./dbConnector');
 
 /**
- * Get transactions for a specific user with optional date filtering.
+ * Get income by category for P&L report - only categories with totals > 0
  */
-async function getUserTransactions(userId, startDate = null, endDate = null, limit = null) {
+async function getIncomeData(userId, startDate, endDate, accountCategory = null) {
     let query = `
-    SELECT id, "userId", "accountFrom", name, amount, description, "receiptUrl",
-           category, "categoryId", subcategory, "subcategoryId", "plaidCategory",
-           "plaidSubcategory", "plaidPrimary", "plaidDetailed", "plaidConfidenceLevel",
-           "plaidCategoryUrl", "transactionId", "accountId", "isoCurrencyCode",
-           "unofficialCurrencyCode", date, year, month, "merchantName", "merchantLogo",
-           "paymentChannel", "paymentMeta", "referenceNumber", "transactionCode",
-           "accountCategory", status, "createdAt", "updatedAt"
-    FROM "Transaction"
-    WHERE "userId" = $1
-      AND category IS NOT NULL
-    `;
-
-    const params = [userId];
-    let paramIndex = 2;
-
-    if (startDate && endDate) {
-        query += ` AND date >= $${paramIndex++} AND date <= $${paramIndex++}`;
-        params.push(startDate, endDate);
-    }
-
-    query += ` ORDER BY date DESC, "createdAt" DESC`;
-
-    if (limit) {
-        query += ` LIMIT $${paramIndex++}`;
-        params.push(limit);
-    }
-
-    const results = await db.executeQuery(query, params);
-
-    // No need to parse JSON, node-postgres does it automatically
-    return results;
-}
-
-/**
- * Get transactions grouped by category with computed totals for P&L report.
- */
-async function getTransactionsGroupedByCategory(userId, startDate = null, endDate = null, accountCategory = null) {
-    let incomeQuery = `
     SELECT 
         COALESCE(subcategory, category) as category_name,
         SUM(amount) as total
@@ -51,75 +13,38 @@ async function getTransactionsGroupedByCategory(userId, startDate = null, endDat
     WHERE "userId" = $1
       AND category IS NOT NULL
       AND amount > 0
-    `;
-
-    let expenseQuery = `
-    SELECT 
-        COALESCE(subcategory, category) as category_name,
-        SUM(ABS(amount)) as total
-    FROM "Transaction"
-    WHERE "userId" = $1
-      AND category IS NOT NULL
-      AND amount < 0
     `;
 
     const params = [userId];
     let paramIndex = 2;
 
     if (accountCategory) {
-        const accountFilter = ` AND "accountCategory" = $${paramIndex++}`;
-        incomeQuery += accountFilter;
-        expenseQuery += accountFilter;
+        query += ` AND "accountCategory" = $${paramIndex++}`;
         params.push(accountCategory);
     }
 
     if (startDate && endDate) {
-        const dateFilter = ` AND date >= $${paramIndex++} AND date <= $${paramIndex++}`;
-        incomeQuery += dateFilter;
-        expenseQuery += dateFilter;
+        query += ` AND date >= $${paramIndex++} AND date <= $${paramIndex++}`;
         params.push(startDate, endDate);
     }
 
-    incomeQuery += " GROUP BY COALESCE(subcategory, category)";
-    expenseQuery += " GROUP BY COALESCE(subcategory, category)";
+    query += ` GROUP BY COALESCE(subcategory, category) HAVING SUM(amount) > 0`;
 
-    // Execute queries in parallel
-    const [incomeResults, expenseResults] = await Promise.all([
-        db.executeQuery(incomeQuery, params),
-        db.executeQuery(expenseQuery, params)
-    ]);
+    const results = await db.executeQuery(query, params);
 
-    const incomeSummary = {};
-    for (const row of incomeResults) {
-        incomeSummary[row.category_name] = parseFloat(row.total) || 0.0;
+    const income = {};
+    for (const row of results) {
+        income[row.category_name] = parseFloat(row.total);
     }
 
-    const expenseSummary = {};
-    for (const row of expenseResults) {
-        expenseSummary[row.category_name] = parseFloat(row.total) || 0.0;
-    }
-
-    return {
-        income: incomeSummary,
-        expenses: expenseSummary
-    };
+    return income;
 }
 
 /**
- * Get transactions with detailed category and subcategory breakdown for P&L report.
+ * Get expenses by category and subcategory for P&L report - only categories with totals > 0
  */
-async function getTransactionsGroupedWithSubcategories(userId, startDate = null, endDate = null, accountCategory = null) {
-    let incomeQuery = `
-    SELECT 
-        COALESCE(subcategory, category) as category_name,
-        SUM(amount) as total
-    FROM "Transaction"
-    WHERE "userId" = $1
-      AND category IS NOT NULL
-      AND amount > 0
-    `;
-
-    let expenseQuery = `
+async function getExpenseData(userId, startDate, endDate, accountCategory = null) {
+    let query = `
     SELECT 
         category,
         subcategory,
@@ -134,39 +59,24 @@ async function getTransactionsGroupedWithSubcategories(userId, startDate = null,
     let paramIndex = 2;
 
     if (accountCategory) {
-        const accountFilter = ` AND "accountCategory" = $${paramIndex++}`;
-        incomeQuery += accountFilter;
-        expenseQuery += accountFilter;
+        query += ` AND "accountCategory" = $${paramIndex++}`;
         params.push(accountCategory);
     }
 
     if (startDate && endDate) {
-        const dateFilter = ` AND date >= $${paramIndex++} AND date <= $${paramIndex++}`;
-        incomeQuery += dateFilter;
-        expenseQuery += dateFilter;
+        query += ` AND date >= $${paramIndex++} AND date <= $${paramIndex++}`;
         params.push(startDate, endDate);
     }
 
-    incomeQuery += " GROUP BY COALESCE(subcategory, category)";
-    expenseQuery += " GROUP BY category, subcategory";
+    query += ` GROUP BY category, subcategory HAVING SUM(ABS(amount)) > 0`;
 
-    // Execute queries in parallel
-    const [incomeResults, expenseResults] = await Promise.all([
-        db.executeQuery(incomeQuery, params),
-        db.executeQuery(expenseQuery, params)
-    ]);
+    const results = await db.executeQuery(query, params);
 
-    const incomeSummary = {};
-    for (const row of incomeResults) {
-        incomeSummary[row.category_name] = parseFloat(row.total) || 0.0;
-    }
-
-    // Process expenses with subcategory breakdown
     const expensesByCategory = {};
-    for (const row of expenseResults) {
+    for (const row of results) {
         const category = row.category;
         const subcategory = row.subcategory;
-        const amount = parseFloat(row.total) || 0.0;
+        const amount = parseFloat(row.total);
 
         if (!expensesByCategory[category]) {
             expensesByCategory[category] = {
@@ -177,25 +87,52 @@ async function getTransactionsGroupedWithSubcategories(userId, startDate = null,
 
         expensesByCategory[category].total += amount;
 
-        if (subcategory) {
+        // Solo agregar subcategorías si realmente existen (no son null/undefined)
+        if (subcategory && subcategory.trim() !== '') {
             expensesByCategory[category].subcategories[subcategory] = amount;
-        } else {
-            // Transactions without subcategory go to "Other"
-            if (!expensesByCategory[category].subcategories["Other"]) {
-                expensesByCategory[category].subcategories["Other"] = 0;
-            }
-            expensesByCategory[category].subcategories["Other"] += amount;
         }
+        // NO crear subcategoría "Other" para transacciones sin subcategoría
     }
 
-    return {
-        income: incomeSummary,
-        expensesByCategory: expensesByCategory
-    };
+    return expensesByCategory;
+}
+
+/**
+ * Get transaction data for transactions report
+ */
+async function getTransactionData(userId, startDate, endDate, limit = 1000) {
+    let query = `
+    SELECT 
+        date,
+        description as "Transaction Name",
+        category as "Category",
+        subcategory as "Subcategory",
+        amount as "Amount",
+        "merchantName" as "Merchant",
+        description as "Description",
+        "accountFrom" as "Account",
+        CASE WHEN amount > 0 THEN 'Income' ELSE 'Expense' END as "Status"
+    FROM "Transaction"
+    WHERE "userId" = $1
+    `;
+
+    const params = [userId];
+    let paramIndex = 2;
+
+    if (startDate && endDate) {
+        query += ` AND date >= $${paramIndex++} AND date <= $${paramIndex++}`;
+        params.push(startDate, endDate);
+    }
+
+    query += ` ORDER BY date DESC LIMIT $${paramIndex}`;
+    params.push(limit);
+
+    const results = await db.executeQuery(query, params);
+    return results;
 }
 
 module.exports = {
-    getUserTransactions,
-    getTransactionsGroupedByCategory,
-    getTransactionsGroupedWithSubcategories
+    getIncomeData,
+    getExpenseData,
+    getTransactionData
 };

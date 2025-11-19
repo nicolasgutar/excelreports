@@ -2,16 +2,11 @@
 const express = require('express');
 const cors = require('cors');
 const Config = require('./config');
-const db = require('./dbConnector');
-const { getUserTransactions, getTransactionsGroupedByCategory, getTransactionsGroupedWithSubcategories } = require('./dbQueries');
-const { getAllBalanceSheetData } = require('./balanceSheetQueries');
-const {
-    createTransactionsDataFrame,
-    processGroupedDataForPnl,
-    processGroupedDataWithSubcategoriesForPnl
-} = require('./transactionProcessor');
-const { generatePnlReport, generatePnlReportByAccount } = require('./pnl');
+const { getIncomeData, getExpenseData, getTransactionData } = require('./dbQueries');
+const { generatePnlData } = require('./transactionProcessor');
+const { generatePnlReport } = require('./pnl');
 const { generateBalanceSheet } = require('./balanceSheet');
+const { getBalanceSheetData } = require('./balanceSheetQueries');
 const { createReportsInExcel } = require('./excelGenerator');
 
 const app = express();
@@ -32,108 +27,59 @@ app.post("/reports", async (req, res) => {
     }
 
     try {
-        console.log(`Generando reportes financieros para el usuario: ${cleanUserId}`);
-
         // Validar configuración
         if (!Config.validate()) {
             throw new Error("Validación de configuración falló");
         }
 
-        // Conexión a DB es manejada por el pool, no es necesaria una conexión explícita aquí
-
-        // Obtener transacciones
-        console.log(`Obteniendo transacciones para el usuario ${cleanUserId}...`);
         const startDate = Config.REPORT_START_DATE;
         const endDate = Config.REPORT_END_DATE;
 
-        const transactions = await getUserTransactions(
-            cleanUserId,
-            startDate,
-            endDate,
-            Config.DEFAULT_TRANSACTION_LIMIT
-        );
-        console.log(`✓ Obtenidas ${transactions.length} transacciones`);
+        // THE 8 QUERIES: 3 reports × (income + expenses) + balance sheet + transactions
 
-        if (transactions.length === 0) {
-            console.log("⚠ ADVERTENCIA: No se encontraron transacciones para este usuario.");
-        }
+        // 1. General P&L Report - Income Query
+        const generalIncomeData = await getIncomeData(cleanUserId, startDate, endDate);
+        // 2. General P&L Report - Expenses Query
+        const generalExpenseData = await getExpenseData(cleanUserId, startDate, endDate);
 
-        // Crear DataFrame (Array de objetos) de transacciones para la hoja
-        const transactionsDf = createTransactionsDataFrame(transactions);
+        // 3. Personal P&L Report - Income Query
+        const personalIncomeData = await getIncomeData(cleanUserId, startDate, endDate, "personal");
+        // 4. Personal P&L Report - Expenses Query
+        const personalExpenseData = await getExpenseData(cleanUserId, startDate, endDate, "personal");
 
-        // Procesar transacciones usando consulta agrupada para P&L con subcategorías
-        console.log("\nProcesando transacciones para P&L usando consulta agrupada con subcategorías...");
-        const groupedDataWithSubcategories = await getTransactionsGroupedWithSubcategories(
-            cleanUserId,
-            startDate,
-            endDate
-        );
+        // 5. Business P&L Report - Income Query
+        const businessIncomeData = await getIncomeData(cleanUserId, startDate, endDate, "business");
+        // 6. Business P&L Report - Expenses Query
+        const businessExpenseData = await getExpenseData(cleanUserId, startDate, endDate, "business");
 
-        // Procesar los datos agrupados en formato P&L con desglose de subcategorías
-        const { pnlData: data, expenseSubcategoryBreakdown } = processGroupedDataWithSubcategoriesForPnl(groupedDataWithSubcategories);
-        console.log(`✓ Datos P&L calculados con subcategorías. Ingreso neto: $${data['Net Income'].toFixed(2)}`);
+        // 7. Balance Sheet Data
+        // const generalBalanceSheetData = await getBalanceSheetData(cleanUserId, startDate, endDate);
 
-        // Obtener datos del Balance Sheet desde la base de datos
-        console.log("\nObteniendo datos del Balance Sheet desde la base de datos...");
-        const balanceSheetData = await getAllBalanceSheetData(
-            cleanUserId,
-            startDate,
-            endDate
-        );
+        // 8. Transactions Data
+        const transactionsData = await getTransactionData(cleanUserId, startDate, endDate, Config.DEFAULT_TRANSACTION_LIMIT);
 
-        // Combinar datos del balance sheet con datos P&L
-        Object.assign(data, balanceSheetData);
-        console.log("✓ Datos del Balance Sheet cargados desde la base de datos");
+        // Generate P&L data for each report
+        const generalPnlData = generatePnlData(generalIncomeData, generalExpenseData);
+        const personalPnlData = generatePnlData(personalIncomeData, personalExpenseData);
+        const businessPnlData = generatePnlData(businessIncomeData, businessExpenseData);
 
-        // Generar reporte P&L (General) con desglose de subcategorías
-        console.log("\n--- Generando Reportes ---");
-        const { pnlDf, netIncome } = generatePnlReport(data, cleanUserId, expenseSubcategoryBreakdown);
-        if (!pnlDf) {
-            throw new Error("Error generando reporte P&L general");
-        }
+        // Generate report structures for Excel
+        const generalPnlReport = generatePnlReport(generalIncomeData, generalExpenseData, "General Yearly Income And Expense Report");
+        const personalPnlReport = generatePnlReport(personalIncomeData, personalExpenseData, "Personal Yearly Income And Expense Report");
+        const businessPnlReport = generatePnlReport(businessIncomeData, businessExpenseData, "Business Yearly Income And Expense Report");
 
-        // Generar reporte P&L Personal con subcategorías
-        console.log("\n--- Generando Reporte P&L Personal ---");
-        const personalGroupedData = await getTransactionsGroupedWithSubcategories(
-            cleanUserId, startDate, endDate, "personal"
-        );
-        const { pnlData: personalData, expenseSubcategoryBreakdown: personalExpenseBreakdown } = processGroupedDataWithSubcategoriesForPnl(personalGroupedData);
-        const { pnlDf: personalPnlDf, netIncome: personalNetIncome } = generatePnlReportByAccount(personalData, cleanUserId, "Personal", personalExpenseBreakdown);
-        console.log(`✓ Datos P&L Personal calculados. Ingreso neto: $${personalNetIncome.toFixed(2)}`);
+        // Generate Balance Sheet with net income from general P&L
+        // const generalBalanceSheet = generateBalanceSheet(generalBalanceSheetData, cleanUserId, generalPnlData.netIncome);
 
-        // Generar reporte P&L de Negocio con subcategorías
-        console.log("\n--- Generando Reporte P&L de Negocio ---");
-        const businessGroupedData = await getTransactionsGroupedWithSubcategories(
-            cleanUserId, startDate, endDate, "business"
-        );
-        const { pnlData: businessData, expenseSubcategoryBreakdown: businessExpenseBreakdown } = processGroupedDataWithSubcategoriesForPnl(businessGroupedData);
-        const { pnlDf: businessPnlDf, netIncome: businessNetIncome } = generatePnlReportByAccount(businessData, cleanUserId, "Business", businessExpenseBreakdown);
-        console.log(`✓ Datos P&L de Negocio calculados. Ingreso neto: $${businessNetIncome.toFixed(2)}`);
-
-        // Generar Balance Sheet
-        console.log("\n--- Generando Balance Sheet ---");
-        const balanceSheetResult = generateBalanceSheet(data, cleanUserId, netIncome);
-        const balanceSheetDf = balanceSheetResult.data;
-        const balanceSummary = balanceSheetResult.balanceSummary;
-
-        // Log del estado del balance
-        if (balanceSummary.isBalanced) {
-            console.log(`✓ Balance Sheet balanceado: $${balanceSummary.totalAssets.toFixed(2)}`);
-        } else {
-            console.warn(`⚠ Balance Sheet desbalanceado!`);
-            console.warn(`   Assets: $${balanceSummary.totalAssets.toFixed(2)}`);
-            console.warn(`   Liabilities + Equity: $${balanceSummary.totalLiabilitiesAndEquity.toFixed(2)}`);
-            console.warn(`   Diferencia: $${balanceSummary.difference.toFixed(2)}`);
-            console.warn(`   ${balanceSummary.adjustmentDescription}`);
-        }
-
-        // Crear y escribir en nuevo documento de ExcelJS
-        console.log("\n--- Creando archivo Excel ---");
+        // Create Excel file with 4 reports: 3 P&L + Transactions (Balance Sheet commented out)
         const workbookBuffer = await createReportsInExcel(
-            cleanUserId, pnlDf, balanceSheetDf, transactionsDf,
-            personalPnlDf, businessPnlDf
+            cleanUserId,
+            generalPnlReport,     // General P&L
+            null,                 // Balance Sheet (commented out)
+            transactionsData,     // Transactions
+            personalPnlReport,    // Personal P&L
+            businessPnlReport     // Business P&L
         );
-        console.log("\n✅ Reportes financieros generados exitosamente!");
 
         // Enviar el archivo como respuesta
         res.setHeader(
@@ -142,9 +88,14 @@ app.post("/reports", async (req, res) => {
         );
         res.setHeader(
             'Content-Disposition',
-            `attachment; filename="Financial_Reports_${cleanUserId}.xlsx"`
+            `attachment; filename="PnL_Reports_${cleanUserId}.xlsx"`
         );
         res.send(workbookBuffer);
+
+        console.log(`✓ Generated P&L reports for user ${cleanUserId}`);
+        console.log(`  - General: Income $${generalPnlData.totalIncome.toFixed(2)}, Expenses $${generalPnlData.totalExpenses.toFixed(2)}, Net $${generalPnlData.netIncome.toFixed(2)}`);
+        console.log(`  - Personal: Income $${personalPnlData.totalIncome.toFixed(2)}, Expenses $${personalPnlData.totalExpenses.toFixed(2)}, Net $${personalPnlData.netIncome.toFixed(2)}`);
+        console.log(`  - Business: Income $${businessPnlData.totalIncome.toFixed(2)}, Expenses $${businessPnlData.totalExpenses.toFixed(2)}, Net $${businessPnlData.netIncome.toFixed(2)}`);
 
     } catch (e) {
         console.error("Error en /reports:", e);
@@ -154,12 +105,12 @@ app.post("/reports", async (req, res) => {
 
 // Health check endpoint
 app.get("/health", (req, res) => {
-    res.json({ status: "OK", message: "Financial Reports API is running" });
+    res.json({ status: "OK", message: "P&L Reports API is running" });
 });
 
 // --- Start Server ---
 app.listen(PORT, () => {
-    console.log(`🚀 Financial Reports API running on port ${PORT}`);
+    console.log(`🚀 P&L Reports API running on port ${PORT}`);
 });
 
 module.exports = app;

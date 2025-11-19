@@ -36,14 +36,14 @@ async function createReportsInExcel(
         sheet.addRows(balanceSheetDf);
         applyBalanceSheetFormatting(sheet);
     }
-    
+
     // 3. Personal P&L
     if (personalPnlDf) {
         const sheet = workbook.addWorksheet('P&L Personal');
         sheet.addRows(personalPnlDf);
         applyPnlFormatting(sheet); // Re-use the same formatting
     }
-    
+
     // 4. Business P&L
     if (businessPnlDf) {
         const sheet = workbook.addWorksheet('P&L Business');
@@ -77,7 +77,7 @@ function applyPnlFormatting(worksheet) {
     worksheet.getColumn('B').width = 20;
     worksheet.getColumn('C').width = 30;
     worksheet.getColumn('D').width = 20;
-    
+
     // 3. Format Main Title (Row 1)
     worksheet.mergeCells('A1:D1');
     const titleCell = worksheet.getCell('A1');
@@ -87,7 +87,6 @@ function applyPnlFormatting(worksheet) {
     const headerRow = worksheet.getRow(2);
     headerRow.font = { ...BOLD_FONT, size: 14, color: L_PURPLE_HEADER_TEXT.argb };
     headerRow.getCell('B').numFmt = CURRENCY_FORMAT;
-    headerRow.getCell('D').numFmt = CURRENCY_FORMAT;
 
     // 5. Format "Actual" Sub-Headers (Row 3)
     const actualRow = worksheet.getRow(3);
@@ -106,7 +105,7 @@ function applyPnlFormatting(worksheet) {
     // 7. Apply Currency Formatting (Rows 5+)
     worksheet.getColumn('B').numFmt = CURRENCY_FORMAT;
     worksheet.getColumn('D').numFmt = CURRENCY_FORMAT;
-    
+
     // Clear currency format on header rows
     ['B2', 'D2'].forEach(addr => worksheet.getCell(addr).numFmt = CURRENCY_FORMAT);
     ['B3', 'D3'].forEach(addr => worksheet.getCell(addr).numFmt = null);
@@ -129,7 +128,7 @@ function applyPnlFormatting(worksheet) {
             { type: 'expression', formulae: [excelUncategorizedFormulaC], style: { fill: { type: 'pattern', pattern: 'solid', fgColor: L_UNCA_BG } } }
         ]
     });
-    
+
     // 9. Format rows with different styles for categories vs subcategories
     for (let i = 5; i <= worksheet.rowCount; i++) {
         const row = worksheet.getRow(i);
@@ -144,12 +143,15 @@ function applyPnlFormatting(worksheet) {
                 row.getCell('A').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } }; // Light gray
                 row.getCell('A').font = { italic: true, size: 10 };
                 row.getCell('A').alignment = { indent: 1 }; // Additional indent in Excel
+                row.getCell('B').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } }; // Match column A
                 row.getCell('B').font = { italic: true, size: 10 };
+                row.getCell('B').alignment = { horizontal: 'right' };
             } else {
                 // Main category formatting - bold
                 row.getCell('A').fill = { type: 'pattern', pattern: 'solid', fgColor: L_ITEM_BG };
                 row.getCell('A').font = BOLD_FONT;
                 row.getCell('B').font = BOLD_FONT;
+                row.getCell('B').alignment = { horizontal: 'right' };
             }
         }
 
@@ -163,12 +165,15 @@ function applyPnlFormatting(worksheet) {
                 row.getCell('C').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } }; // Light gray
                 row.getCell('C').font = { italic: true, size: 10 };
                 row.getCell('C').alignment = { indent: 1 }; // Additional indent in Excel
+                row.getCell('D').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } }; // Match column C
                 row.getCell('D').font = { italic: true, size: 10 };
+                row.getCell('D').alignment = { horizontal: 'right' };
             } else {
                 // Main category formatting - bold
                 row.getCell('C').fill = { type: 'pattern', pattern: 'solid', fgColor: L_ITEM_BG };
                 row.getCell('C').font = BOLD_FONT;
                 row.getCell('D').font = BOLD_FONT;
+                row.getCell('D').alignment = { horizontal: 'right' };
             }
         }
     }
@@ -182,7 +187,7 @@ function applyBalanceSheetFormatting(worksheet) {
 
     // Apply Currency to Column B
     worksheet.getColumn('B').numFmt = CURRENCY_FORMAT;
-    
+
     // Define row styles
     const majorHeaderRows = [2, 14, 23]; // ASSETS, LIABILITIES, OWNER'S EQUITY
     const subHeaderRows = [15]; // CURRENT LIABILITIES
@@ -191,7 +196,7 @@ function applyBalanceSheetFormatting(worksheet) {
 
     for (let i = 1; i <= worksheet.rowCount; i++) {
         const row = worksheet.getRow(i);
-        
+
         // Clear currency on non-data rows
         if (row.getCell('B').value === null) {
             row.getCell('B').numFmt = null;
@@ -210,15 +215,15 @@ function applyBalanceSheetFormatting(worksheet) {
 // --- TRANSACTIONS FORMATTING ---
 function applyTransactionsFormatting(worksheet) {
     worksheet.views = [{ showGridLines: false, state: 'frozen', ySplit: 1 }]; // Freeze header
-    
+
     // Format Header
     const headerRow = worksheet.getRow(1);
     headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: COLOR_TRANS_HEADER_BG };
     headerRow.font = { ...BOLD_FONT, color: COLOR_TRANS_HEADER_FONT.argb };
-    
+
     // Format Amount column (E)
     worksheet.getColumn('E').numFmt = CURRENCY_FORMAT;
-    
+
     // Set column widths
     worksheet.columns = [
         { key: 'Date', width: 12 },
@@ -234,3 +239,4 @@ function applyTransactionsFormatting(worksheet) {
 }
 
 module.exports = { createReportsInExcel };
+

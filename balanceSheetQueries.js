@@ -198,210 +198,51 @@ async function getTaxesPayable(userId, startDate = null, endDate = null) {
     let query, params;
 
     if (startDate && endDate) {
-        // Calcular impuestos basado en ingresos netos del período
         query = `
-        SELECT 
-            COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) as total_income,
-            COALESCE(SUM(CASE WHEN amount < 0 AND category NOT ILIKE '%Transfer%' THEN ABS(amount) ELSE 0 END), 0) as total_expenses
+        SELECT COALESCE(SUM(ABS(amount)), 0) as total_taxes
         FROM "Transaction"
-        WHERE "userId" = $1 AND date >= $2 AND date <= $3
-        `;
-        params = [userId, startDate, endDate];
-    } else {
-        query = `
-        SELECT 
-            COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) as total_income,
-            COALESCE(SUM(CASE WHEN amount < 0 AND category NOT ILIKE '%Transfer%' THEN ABS(amount) ELSE 0 END), 0) as total_expenses
-        FROM "Transaction"
-        WHERE "userId" = $1
-        `;
-        params = [userId];
-    }
-
-    const result = await db.executeSingle(query, params);
-    const totalIncome = parseFloat(result?.total_income) || 0.0;
-    const totalExpenses = parseFloat(result?.total_expenses) || 0.0;
-    const netIncome = totalIncome - totalExpenses;
-
-    // Solo calcular impuestos si hay ganancia, usando 33% como tasa estimada
-    return Math.max(netIncome * 0.33, 0);
-}
-
-async function getOwnerContribution(userId, startDate = null, endDate = null) {
-    // Implementar lógica real para contribuciones del propietario
-    let query, params;
-
-    if (startDate && endDate) {
-        query = `
-        SELECT COALESCE(SUM(amount), 0) as total_contribution
-        FROM "Transaction"
-        WHERE "userId" = $1 AND amount > 0 
-          AND (category ILIKE '%contribution%' OR category ILIKE '%investment%' OR category ILIKE '%capital%')
+        WHERE "userId" = $1 AND amount < 0 
+          AND category ILIKE '%tax%'
           AND date >= $2 AND date <= $3
         `;
         params = [userId, startDate, endDate];
     } else {
         query = `
-        SELECT COALESCE(SUM(amount), 0) as total_contribution
+        SELECT COALESCE(SUM(ABS(amount)), 0) as total_taxes
         FROM "Transaction"
-        WHERE "userId" = $1 AND amount > 0 
-          AND (category ILIKE '%contribution%' OR category ILIKE '%investment%' OR category ILIKE '%capital%')
+        WHERE "userId" = $1 AND amount < 0 
+          AND category ILIKE '%tax%'
         `;
         params = [userId];
     }
 
     const result = await db.executeSingle(query, params);
-    return parseFloat(result?.total_contribution) || 0.0;
-}
-
-async function getOwnerWithdrawal(userId, startDate = null, endDate = null) {
-    // Implementar lógica real para retiros del propietario
-    let query, params;
-
-    if (startDate && endDate) {
-        query = `
-        SELECT COALESCE(SUM(ABS(amount)), 0) as total_withdrawal
-        FROM "Transaction"
-        WHERE "userId" = $1 AND amount < 0 
-          AND (category ILIKE '%withdrawal%' OR category ILIKE '%draw%' OR category ILIKE '%distribution%')
-          AND date >= $2 AND date <= $3
-        `;
-        params = [userId, startDate, endDate];
-    } else {
-        query = `
-        SELECT COALESCE(SUM(ABS(amount)), 0) as total_withdrawal
-        FROM "Transaction"
-        WHERE "userId" = $1 AND amount < 0 
-          AND (category ILIKE '%withdrawal%' OR category ILIKE '%draw%' OR category ILIKE '%distribution%')
-        `;
-        params = [userId];
-    }
-
-    const result = await db.executeSingle(query, params);
-    return parseFloat(result?.total_withdrawal) || 0.0;
+    return parseFloat(result?.total_taxes) || 0.0;
 }
 
 /**
- * Consulta consolidada optimizada para obtener todos los datos de cuentas de una vez
+ * Main function to get balance sheet data
  */
-async function getAccountsDataOptimized(userId, endDate = null) {
-    let query = `
-    SELECT 
-        type,
-        COALESCE(SUM(ABS(balance)), 0) as total_balance
-    FROM "Account"
-    WHERE user_id = $1
-    `;
-
-    let params = [userId];
-
-    query += ` GROUP BY type`;
-
-    const result = await db.executeQuery(query, params);
-
-    // Procesar resultados en un mapa para fácil acceso
-    const accountsMap = {};
-    result.forEach(row => {
-        accountsMap[row.type] = parseFloat(row.total_balance) || 0.0;
-    });
-
-    return {
-        cash: accountsMap['checking'] || 0.0,
-        savings: accountsMap['savings'] || 0.0,
-        creditDebt: (accountsMap['credit'] || 0.0) + (accountsMap['debt'] || 0.0)
+async function getBalanceSheetData(userId, startDate = null, endDate = null) {
+    // Get all balance sheet components
+    const data = {
+        "Cash": await getCashBalance(userId, startDate, endDate),
+        "Accounts Receivable": await getAccountsReceivable(userId, startDate, endDate),
+        "Other Receivables": await getOtherReceivables(userId, startDate, endDate),
+        "Business Savings/Reserves": await getBusinessSavings(userId, startDate, endDate),
+        "Business Equipment (Asset)": await getBusinessEquipment(userId, startDate, endDate),
+        "Inventory": await getInventory(userId, startDate, endDate),
+        "Prepaid Expenses": await getPrepaidExpenses(userId, startDate, endDate),
+        "Loan Payments / Credit Cards": await getCreditCardDebt(userId, startDate, endDate),
+        "Business Loans 1": await getBusinessLoans(userId, startDate, endDate),
+        "Business Loans 2": 0, // Placeholder for second loan category
+        "Taxes Payable": await getTaxesPayable(userId, startDate, endDate)
     };
-}
 
-/**
- * Get all balance sheet data in parallel with optimizations.
- */
-async function getAllBalanceSheetData(userId, startDate = null, endDate = null) {
-    console.log(`\n--- Fetching Balance Sheet Data for User: ${userId} ---`);
-    console.log(`Date Range: ${startDate || 'ALL'} to ${endDate || 'ALL'}`);
-
-    try {
-        // Obtener datos de cuentas de forma consolidada
-        const accountsDataPromise = getAccountsDataOptimized(userId, endDate);
-
-        // Ejecutar consultas restantes en paralelo
-        const [
-            accountsData, AccountsReceivable, OtherReceivables,
-            BusinessEquipment, Inventory, PrepaidExpenses, BusinessLoans,
-            TaxesPayable, OwnerContribution, OwnerWithdrawal
-        ] = await Promise.all([
-            accountsDataPromise,
-            getAccountsReceivable(userId, startDate, endDate),
-            getOtherReceivables(userId, startDate, endDate),
-            getBusinessEquipment(userId, startDate, endDate),
-            getInventory(userId, startDate, endDate),
-            getPrepaidExpenses(userId, startDate, endDate),
-            getBusinessLoans(userId, startDate, endDate),
-            getTaxesPayable(userId, startDate, endDate),
-            getOwnerContribution(userId, startDate, endDate),
-            getOwnerWithdrawal(userId, startDate, endDate)
-        ]);
-
-        const data = {
-            "Cash": accountsData.cash,
-            "Accounts Receivable": AccountsReceivable,
-            "Other Receivables": OtherReceivables,
-            "Business Savings/Reserves": accountsData.savings,
-            "Business Equipment (Asset)": BusinessEquipment,
-            "Inventory": Inventory,
-            "Prepaid Expenses": PrepaidExpenses,
-            "Loan Payments / Credit Cards": accountsData.creditDebt,
-            "Business Loans 1": BusinessLoans,
-            "Business Loans 2": 0.0, // Placeholder para préstamo adicional
-            "Taxes Payable": TaxesPayable,
-            "Owner's Contribution": OwnerContribution,
-            "Owner's Withdrawal": OwnerWithdrawal,
-        };
-
-        // Calcular totales tomando valores absolutos donde aplica
-        const totalAssets = (
-            (data["Cash"] || 0) +
-            (data["Accounts Receivable"] || 0) +
-            (data["Other Receivables"] || 0) +
-            (data["Business Savings/Reserves"] || 0) +
-            (data["Business Equipment (Asset)"] || 0) +
-            (data["Inventory"] || 0) +
-            (data["Prepaid Expenses"] || 0)
-        );
-
-        const totalLiabilities = (
-            (data["Loan Payments / Credit Cards"] || 0) +
-            (data["Business Loans 1"] || 0) +
-            (data["Taxes Payable"] || 0)
-        );
-
-        // Calcular patrimonio: contribuciones menos retiros
-        const totalEquity = (data["Owner's Contribution"] || 0) - (data["Owner's Withdrawal"] || 0);
-
-        // Ajuste necesario para que Assets = Liabilities + Equity
-        const reconciliationAdjustment = parseFloat((totalAssets - (totalLiabilities + totalEquity)).toFixed(2));
-
-        // Añadir fila de ajuste para conciliación; si es 0, no afecta
-        data["Reconciliation Adjustment (to satisfy Assets = Liabilities + Equity)"] = reconciliationAdjustment;
-
-        // Log de resumen para depuración
-        console.log("✓ Balance Sheet data fetched successfully");
-        console.log(`  - Total Assets: $${totalAssets.toFixed(2)}`);
-        console.log(`  - Total Liabilities: $${totalLiabilities.toFixed(2)}`);
-        console.log(`  - Total Equity: $${totalEquity.toFixed(2)}`);
-        console.log(`  - Reconciliation Adjustment: $${reconciliationAdjustment.toFixed(2)}`);
-        console.log(`  - Liabilities + Equity (before adjustment): $${(totalLiabilities + totalEquity).toFixed(2)}`);
-        console.log(`  - Liabilities + Equity (after adjustment): $${(totalLiabilities + totalEquity + reconciliationAdjustment).toFixed(2)}`);
-
-        return data;
-
-    } catch (error) {
-        console.error("Error fetching balance sheet data:", error);
-        throw new Error(`Failed to fetch balance sheet data: ${error.message}`);
-    }
+    return data;
 }
 
 module.exports = {
-    getAllBalanceSheetData,
     getCashBalance,
     getAccountsReceivable,
     getOtherReceivables,
@@ -412,7 +253,5 @@ module.exports = {
     getCreditCardDebt,
     getBusinessLoans,
     getTaxesPayable,
-    getOwnerContribution,
-    getOwnerWithdrawal,
-    getAccountsDataOptimized
+    getBalanceSheetData
 };

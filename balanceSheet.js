@@ -152,23 +152,8 @@ function generateBalanceSheet(userData, userId, netIncome) {
         );
     }
 
-    // Objeto de resumen para uso externo
-    const balanceSummary = {
-        totalAssets,
-        totalLiabilities,
-        totalEquity,
-        totalLiabilitiesAndEquity,
-        difference,
-        isBalanced: Math.abs(difference) < tolerance,
-        adjustmentNeeded,
-        adjustmentDescription,
-        balanceStatus
-    };
-
-    return {
-        data,
-        balanceSummary
-    };
+    // Retornar el array de datos para Excel, no un objeto
+    return data;
 }
 
 module.exports = { generateBalanceSheet };
