@@ -1,7 +1,3 @@
-// config.js
-const dotenv = require('dotenv');
-dotenv.config();
-
 const Config = {
     // Database Configuration
     DB_URL: process.env.DB_URL || '',
@@ -51,4 +47,4 @@ const Config = {
     }
 };
 
-module.exports = Config;
+export default Config;

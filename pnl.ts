@@ -1,20 +1,38 @@
-const { zipLongest } = require('./utils');
+import { zipLongest } from './utils.js';
 
-/**
- * Generate P&L report structure for Excel
- */
-function generatePnlReport(incomeData, expenseData, reportTitle = "Yearly Income And Expense Report") {
+
+// Define TypeScript interfaces for income and expense data
+interface IncomeData {
+    [category: string]: number;
+}
+
+interface ExpenseSubcategories {
+    [subcategory: string]: number;
+}
+
+interface ExpenseData {
+    [category: string]: {
+        total: number;
+        subcategories?: ExpenseSubcategories;
+    };
+}
+
+function generatePnlReport(
+    incomeData: IncomeData,
+    expenseData: ExpenseData,
+    reportTitle = "Yearly Income And Expense Report"
+) {
     // Build income items - only categories with amounts > 0
-    const incomeItems = [];
-    for (const [category, amount] of Object.entries(incomeData)) {
+    const incomeItems: [string, number][] = [];
+    for (const [category, amount] of Object.entries(incomeData) as [string, number][]) {
         if (amount > 0) {
             incomeItems.push([category, amount]);
         }
     }
 
     // Build expense items with subcategories - only categories with amounts > 0
-    const expenseItems = [];
-    for (const [category, categoryData] of Object.entries(expenseData)) {
+    const expenseItems: [string, number | boolean, boolean?][] = [];
+    for (const [category, categoryData] of Object.entries(expenseData) as [string, { total: number; subcategories?: ExpenseSubcategories }][]) {
         if (categoryData.total > 0) {
             // Main category
             expenseItems.push([category, categoryData.total]);
@@ -23,7 +41,7 @@ function generatePnlReport(incomeData, expenseData, reportTitle = "Yearly Income
             const subcategories = categoryData.subcategories || {};
             const sortedSubcategories = Object.entries(subcategories).sort(([a], [b]) => a.localeCompare(b));
 
-            for (const [subcategory, subAmount] of sortedSubcategories) {
+            for (const [subcategory, subAmount] of sortedSubcategories as [string, number][]) {
                 if (subAmount > 0) {
                     expenseItems.push([`  ${subcategory}`, subAmount, true]); // true flag indicates subcategory
                 }
@@ -36,15 +54,16 @@ function generatePnlReport(incomeData, expenseData, reportTitle = "Yearly Income
     const incomeSumFormula = `SUM(D5:D${4 + incomeItems.length})`;
 
     // Build report structure
-    const data = [
+    const data: (string | number | { formula: string } | null)[][] = [];
+    data.push(
         [reportTitle, null, null, null],
         ["Operating Expenses", { formula: expenseSumFormula }, "Income", { formula: incomeSumFormula }],
         [null, "Actual", null, "Actual"],
-        [null, null, null, null],
-    ];
+        [null, null, null, null]
+    );
 
     // Zip expenses and income to create balanced rows
-    const zipped = zipLongest(expenseItems, incomeItems, [null, null]);
+    const zipped = zipLongest(expenseItems, incomeItems, ["", 0]);
     for (const [exp, inc] of zipped) {
         const expenseCell = exp ? exp[0] : null;
         const expenseAmount = exp ? exp[1] : null;
@@ -52,14 +71,15 @@ function generatePnlReport(incomeData, expenseData, reportTitle = "Yearly Income
         const incomeCell = inc ? inc[0] : null;
         const incomeAmount = inc ? inc[1] : null;
 
-        data.push([expenseCell, expenseAmount, incomeCell, incomeAmount]);
+        data.push([
+            expenseCell || "",
+            typeof expenseAmount === "number" ? expenseAmount : null,
+            incomeCell || "",
+            typeof incomeAmount === "number" ? incomeAmount : null
+        ]);
     }
 
     return data;
 }
 
-module.exports = {
-    generatePnlReport
-};
-
-
+export { generatePnlReport };

@@ -1,10 +1,34 @@
-// dbQueries.js
-const db = require('./dbConnector');
+import db from './dbConnector.js';
 
-/**
- * Get income by category for P&L report - only categories with totals > 0
- */
-async function getIncomeData(userId, startDate, endDate, accountCategory = null) {
+interface IncomeData {
+    [category: string]: number;
+}
+
+interface ExpenseSubcategories {
+    [subcategory: string]: number;
+}
+
+interface ExpenseData {
+    [category: string]: {
+        total: number;
+        subcategories?: ExpenseSubcategories;
+    };
+}
+
+export type Transaction = {
+    id: string;
+    amount: number;
+    date: string;
+    description: string;
+    category: string;
+};
+
+async function getIncomeData(
+    userId: string,
+    startDate: string | null,
+    endDate: string | null,
+    accountCategory: string | null = null
+): Promise<IncomeData> {
     let query = `
     SELECT 
         COALESCE(subcategory, category) as category_name,
@@ -15,7 +39,7 @@ async function getIncomeData(userId, startDate, endDate, accountCategory = null)
       AND amount > 0
     `;
 
-    const params = [userId];
+    const params: (string | number | null)[] = [userId];
     let paramIndex = 2;
 
     if (accountCategory) {
@@ -32,7 +56,7 @@ async function getIncomeData(userId, startDate, endDate, accountCategory = null)
 
     const results = await db.executeQuery(query, params);
 
-    const income = {};
+    const income: IncomeData = {};
     for (const row of results) {
         income[row.category_name] = parseFloat(row.total);
     }
@@ -40,10 +64,12 @@ async function getIncomeData(userId, startDate, endDate, accountCategory = null)
     return income;
 }
 
-/**
- * Get expenses by category and subcategory for P&L report - only categories with totals > 0
- */
-async function getExpenseData(userId, startDate, endDate, accountCategory = null) {
+async function getExpenseData(
+    userId: string,
+    startDate: string | null,
+    endDate: string | null,
+    accountCategory: string | null = null
+): Promise<ExpenseData> {
     let query = `
     SELECT 
         category,
@@ -55,7 +81,7 @@ async function getExpenseData(userId, startDate, endDate, accountCategory = null
       AND amount < 0
     `;
 
-    const params = [userId];
+    const params: (string | number | null)[] = [userId];
     let paramIndex = 2;
 
     if (accountCategory) {
@@ -72,7 +98,7 @@ async function getExpenseData(userId, startDate, endDate, accountCategory = null
 
     const results = await db.executeQuery(query, params);
 
-    const expensesByCategory = {};
+    const expensesByCategory: ExpenseData = {};
     for (const row of results) {
         const category = row.category;
         const subcategory = row.subcategory;
@@ -87,20 +113,20 @@ async function getExpenseData(userId, startDate, endDate, accountCategory = null
 
         expensesByCategory[category].total += amount;
 
-        // Solo agregar subcategorías si realmente existen (no son null/undefined)
         if (subcategory && subcategory.trim() !== '') {
-            expensesByCategory[category].subcategories[subcategory] = amount;
+            expensesByCategory[category].subcategories![subcategory] = amount;
         }
-        // NO crear subcategoría "Other" para transacciones sin subcategoría
     }
 
     return expensesByCategory;
 }
 
-/**
- * Get transaction data for transactions report
- */
-async function getTransactionData(userId, startDate, endDate, limit = 1000) {
+async function getTransactionData(
+    userId: string,
+    startDate: string | null,
+    endDate: string | null,
+    limit: number = 1000
+): Promise<Transaction[]> {
     let query = `
     SELECT 
         date,
@@ -116,7 +142,7 @@ async function getTransactionData(userId, startDate, endDate, limit = 1000) {
     WHERE "userId" = $1
     `;
 
-    const params = [userId];
+    const params: (string | number | null)[] = [userId];
     let paramIndex = 2;
 
     if (startDate && endDate) {
@@ -128,10 +154,10 @@ async function getTransactionData(userId, startDate, endDate, limit = 1000) {
     params.push(limit);
 
     const results = await db.executeQuery(query, params);
-    return results;
+    return results as Transaction[];
 }
 
-module.exports = {
+export {
     getIncomeData,
     getExpenseData,
     getTransactionData

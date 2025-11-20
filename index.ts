@@ -1,13 +1,29 @@
 // index.js
-const express = require('express');
-const cors = require('cors');
-const Config = require('./config');
-const { getIncomeData, getExpenseData, getTransactionData } = require('./dbQueries');
-const { generatePnlData } = require('./transactionProcessor');
-const { generatePnlReport } = require('./pnl');
-const { generateBalanceSheet } = require('./balanceSheet');
-const { getBalanceSheetData } = require('./balanceSheetQueries');
-const { createReportsInExcel } = require('./excelGenerator');
+process.on('uncaughtException', (err) => {
+    console.error('\n!!! FATAL UNCAUGHT EXCEPTION !!!');
+    console.error(err);
+    process.exit(1); // Ensure the process exits
+});
+
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('\n!!! FATAL UNHANDLED REJECTION !!!');
+    console.error('Reason:', reason);
+    console.error('Promise:', promise);
+    process.exit(1); // Ensure the process exits
+});
+
+import dotenv from 'dotenv';
+dotenv.config();
+import express, { Request, Response } from 'express';
+import cors from 'cors';
+import Config from './config.js';
+import { getIncomeData, getExpenseData, getTransactionData } from './dbQueries.js';
+import { generatePnlData } from './transactionProcessor.js';
+import { generatePnlReport } from './pnl.js';
+import { createReportsInExcel } from './excelGenerator.js';
+
+
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -18,7 +34,7 @@ app.use(express.json()); // Replaces Pydantic model parsing
 
 // --- Endpoints ---
 
-app.post("/reports", async (req, res) => {
+app.post("/reports", async (req: Request, res: Response) => {
     const { userId } = req.body;
     const cleanUserId = userId?.trim();
 
@@ -29,7 +45,7 @@ app.post("/reports", async (req, res) => {
     try {
         // Validar configuración
         if (!Config.validate()) {
-            throw new Error("Validación de configuración falló");
+            throw new Error("Validación de configuración falló"); // This is intentional for validation failure
         }
 
         const startDate = Config.REPORT_START_DATE;
@@ -98,13 +114,18 @@ app.post("/reports", async (req, res) => {
         console.log(`  - Business: Income $${businessPnlData.totalIncome.toFixed(2)}, Expenses $${businessPnlData.totalExpenses.toFixed(2)}, Net $${businessPnlData.netIncome.toFixed(2)}`);
 
     } catch (e) {
-        console.error("Error en /reports:", e);
-        res.status(500).json({ detail: `Error generating reports: ${e.message}` });
+        if (e instanceof Error) {
+            console.error("Error en /reports:", e);
+            res.status(500).json({ detail: `Error generating reports: ${e.message}` });
+        } else {
+            console.error("Unknown error en /reports:", e);
+            res.status(500).json({ detail: "An unknown error occurred." });
+        }
     }
 });
 
 // Health check endpoint
-app.get("/health", (req, res) => {
+app.get("/health", (req: Request, res: Response) => {
     res.json({ status: "OK", message: "P&L Reports API is running" });
 });
 
@@ -113,4 +134,4 @@ app.listen(PORT, () => {
     console.log(`🚀 P&L Reports API running on port ${PORT}`);
 });
 
-module.exports = app;
+export default app;

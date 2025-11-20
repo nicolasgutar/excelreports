@@ -5,7 +5,7 @@
  * @param {object} rgb - e.g., { red: 0.44, green: 0.19, blue: 0.63 }
  * @returns {string} - e.g., 'FF7030A0'
  */
-function rgbToArgb(rgb) {
+function rgbToArgb(rgb: { red: number; green: number; blue: number }): string {
     if (!rgb || rgb.red === undefined) {
         console.warn("Invalid RGB object", rgb);
         return 'FFFFFFFF'; // Default to white on error
@@ -46,9 +46,9 @@ const BOLD_FONT = { bold: true };
  * @param {*} fillValue
  * @returns {Array}
  */
-function zipLongest(arr1, arr2, fillValue) {
+function zipLongest<T, U>(arr1: T[], arr2: U[], fillValue: T | U): (T | U)[][] {
     const length = Math.max(arr1.length, arr2.length);
-    const zipped = [];
+    const zipped: (T | U)[][] = [];
     for (let i = 0; i < length; i++) {
         zipped.push([
             arr1[i] || fillValue,
@@ -58,9 +58,9 @@ function zipLongest(arr1, arr2, fillValue) {
     return zipped;
 }
 
-module.exports = {
+// Converted CommonJS `module.exports` to ES module syntax.
+export {
     zipLongest,
-    rgbToArgb,
     // P&L
     L_PURPLE_HEADER_TEXT, L_WHITE_BG, L_UNCA_BG, L_ITEM_BG, L_BORDER_COLOR, L_ACTUAL_TEXT,
     // Balance Sheet
@@ -70,3 +70,5 @@ module.exports = {
     // Shared
     CURRENCY_FORMAT, BOLD_FONT
 };
+// Ensure `utils.ts` is recognized as a module by adding an empty export.
+export {};
