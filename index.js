@@ -19,11 +19,15 @@ app.use(express.json()); // Replaces Pydantic model parsing
 // --- Endpoints ---
 
 app.post("/reports", async (req, res) => {
-    const { userId } = req.body;
+    const { userId, startDate, endDate } = req.body;
     const cleanUserId = userId?.trim();
 
     if (!cleanUserId) {
         return res.status(400).json({ detail: "User ID no puede estar vacío" });
+    }
+
+    if (!startDate || !endDate) {
+        return res.status(400).json({ detail: "startDate y endDate son requeridos" });
     }
 
     try {
@@ -31,9 +35,6 @@ app.post("/reports", async (req, res) => {
         if (!Config.validate()) {
             throw new Error("Validación de configuración falló");
         }
-
-        const startDate = Config.REPORT_START_DATE;
-        const endDate = Config.REPORT_END_DATE;
 
         // THE 8 QUERIES: 3 reports × (income + expenses) + balance sheet + transactions
 
