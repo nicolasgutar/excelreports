@@ -2,10 +2,10 @@
   "name": "financial-reports-express",
   "version": "1.0.0",
   "description": "Express clone of the financial reports API",
-  "main": "index.js",
+  "main": "index.ts",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node index.ts",
+    "dev": "nodemon index.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

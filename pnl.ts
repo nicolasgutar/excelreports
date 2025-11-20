@@ -61,3 +61,5 @@ function generatePnlReport(incomeData, expenseData, reportTitle = "Yearly Income
 module.exports = {
     generatePnlReport
 };
+
+
